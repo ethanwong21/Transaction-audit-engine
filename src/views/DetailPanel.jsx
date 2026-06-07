@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import useAppStore from '../store/useAppStore'
 import FlagBadge from '../components/FlagBadge'
-import AIResponse from '../components/AIResponse'
-import { getTransactionExplanation } from '../data/apiClient'
 
 function Field({ label, value }) {
   return (
@@ -23,9 +21,7 @@ export default function DetailPanel() {
   const updateReviewState = useAppStore(s => s.updateReviewState)
   const reviewState = useAppStore(s => s.reviewState)
 
-  const [aiText, setAiText] = useState('')
-  const [aiLoading, setAiLoading] = useState(false)
-  const [aiError, setAiError] = useState('')
+  const [aiNotice, setAiNotice] = useState(false)
   const [note, setNote] = useState('')
 
   const close = useCallback(() => setSelectedTxn(null), [setSelectedTxn])
@@ -37,7 +33,7 @@ export default function DetailPanel() {
   }, [close])
 
   useEffect(() => {
-    setAiText(''); setAiError('')
+    setAiNotice(false)
   }, [selectedTxn?.txn_id])
 
   if (!selectedTxn) return null
@@ -51,17 +47,8 @@ export default function DetailPanel() {
   const peerMean = peerAmounts.length ? peerAmounts.reduce((a, b) => a + b, 0) / peerAmounts.length : null
   const deviation = peerMean ? ((selectedTxn.amount - peerMean) / peerMean * 100).toFixed(1) : null
 
-  async function explainWithAI() {
-    setAiLoading(true); setAiError(''); setAiText('')
-    try {
-      const peerData = { vendorMean: peerMean, sampleSize: peerAmounts.length, deviation: deviation + '%' }
-      const text = await getTransactionExplanation(selectedTxn, result.flags, peerData)
-      setAiText(text)
-    } catch (e) {
-      setAiError(e.message)
-    } finally {
-      setAiLoading(false)
-    }
+  function explainWithAI() {
+    setAiNotice(true)
   }
 
   function addNote() {
@@ -153,24 +140,22 @@ export default function DetailPanel() {
 
           <button
             onClick={explainWithAI}
-            disabled={aiLoading}
             style={{
-              width: '100%', background: aiLoading ? 'var(--accent-dim)' : 'var(--bg-base)',
+              width: '100%', background: 'var(--bg-base)',
               border: '1px solid var(--accent)', color: 'var(--accent)',
               padding: '10px', fontSize: 12, fontFamily: 'IBM Plex Mono',
-              fontWeight: 600, cursor: aiLoading ? 'not-allowed' : 'pointer',
+              fontWeight: 600, cursor: 'pointer',
               letterSpacing: '0.05em', marginBottom: 4
             }}
           >
-            {aiLoading ? '■ ANALYZING...' : '▶ EXPLAIN WITH AI'}
+            ▶ EXPLAIN WITH AI
           </button>
 
-          {aiError && (
-            <div style={{ padding: '8px 12px', background: 'rgba(224,82,82,0.1)', border: '1px solid var(--critical)', fontFamily: 'IBM Plex Mono', fontSize: 11, color: 'var(--critical)', marginBottom: 16 }}>
-              {aiError}
+          {aiNotice && (
+            <div style={{ borderLeft: '3px solid #2D7DD2', background: '#111318', padding: '12px 16px', marginBottom: 16, fontFamily: 'IBM Plex Mono', fontSize: 11, color: 'var(--text-secondary)' }}>
+              AI features require an Anthropic API key. Add ANTHROPIC_API_KEY to your environment variables to enable this feature.
             </div>
           )}
-          {(aiLoading || aiText) && <AIResponse text={aiText} loading={aiLoading} />}
 
           <div style={{ marginTop: 20, borderTop: '1px solid var(--border)', paddingTop: 20 }}>
             <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'IBM Plex Mono', letterSpacing: '0.1em', marginBottom: 12 }}>ACTIONS</div>

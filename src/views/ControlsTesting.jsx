@@ -1,7 +1,5 @@
 import React, { useState, useMemo } from 'react'
 import useAppStore from '../store/useAppStore'
-import { getControlsMemo } from '../data/apiClient'
-import AIResponse from '../components/AIResponse'
 
 function ControlCard({ title, status, count, pct, threshold, description }) {
   const statusColor = status === 'PASS' ? 'var(--low)' : status === 'FAIL' ? 'var(--critical)' : 'var(--medium)'
@@ -36,9 +34,7 @@ function ControlCard({ title, status, count, pct, threshold, description }) {
 export default function ControlsTesting() {
   const transactions = useAppStore(s => s.transactions)
   const analysisResults = useAppStore(s => s.analysisResults)
-  const [aiText, setAiText] = useState('')
-  const [aiLoading, setAiLoading] = useState(false)
-  const [aiError, setAiError] = useState('')
+  const [aiNotice, setAiNotice] = useState(false)
 
   const controls = useMemo(() => {
     const total = transactions.length
@@ -122,16 +118,8 @@ export default function ControlsTesting() {
     ]
   }, [transactions, analysisResults])
 
-  async function generateMemo() {
-    setAiLoading(true); setAiError(''); setAiText('')
-    try {
-      const text = await getControlsMemo(controls)
-      setAiText(text)
-    } catch (e) {
-      setAiError(e.message)
-    } finally {
-      setAiLoading(false)
-    }
+  function generateMemo() {
+    setAiNotice(true)
   }
 
   return (
@@ -145,15 +133,15 @@ export default function ControlsTesting() {
         </div>
         <button
           onClick={generateMemo}
-          disabled={aiLoading || !transactions.length}
+          disabled={!transactions.length}
           style={{
-            background: aiLoading ? 'var(--accent-dim)' : 'var(--accent)',
+            background: 'var(--accent)',
             border: 'none', color: '#fff', padding: '10px 20px',
             fontSize: 12, fontFamily: 'IBM Plex Mono', fontWeight: 600,
-            cursor: aiLoading ? 'not-allowed' : 'pointer', letterSpacing: '0.05em'
+            cursor: 'pointer', letterSpacing: '0.05em'
           }}
         >
-          {aiLoading ? '■ GENERATING...' : '▶ GENERATE CONTROLS MEMO'}
+          ▶ GENERATE CONTROLS MEMO
         </button>
       </div>
 
@@ -161,12 +149,11 @@ export default function ControlsTesting() {
         {controls.map(c => <ControlCard key={c.title} {...c} />)}
       </div>
 
-      {aiError && (
-        <div style={{ background: 'rgba(224,82,82,0.1)', border: '1px solid var(--critical)', padding: '12px 16px', marginBottom: 16, fontFamily: 'IBM Plex Mono', fontSize: 12, color: 'var(--critical)' }}>
-          ERROR: {aiError}
+      {aiNotice && (
+        <div style={{ borderLeft: '3px solid #2D7DD2', background: '#111318', padding: '12px 16px', marginBottom: 16, fontFamily: 'IBM Plex Mono', fontSize: 12, color: 'var(--text-secondary)' }}>
+          AI features require an Anthropic API key. Add ANTHROPIC_API_KEY to your environment variables to enable this feature.
         </div>
       )}
-      {(aiLoading || aiText) && <AIResponse text={aiText} loading={aiLoading} />}
     </div>
   )
 }

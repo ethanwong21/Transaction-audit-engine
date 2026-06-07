@@ -4,8 +4,6 @@ import {
   LineChart, Line, ResponsiveContainer
 } from 'recharts'
 import useAppStore from '../store/useAppStore'
-import { getAuditSummary } from '../data/apiClient'
-import AIResponse from '../components/AIResponse'
 
 const TIER_COLORS = {
   Critical: '#e05252',
@@ -49,9 +47,7 @@ const CustomTooltip = ({ active, payload, label }) => {
 export default function Dashboard() {
   const transactions = useAppStore(s => s.transactions)
   const analysisResults = useAppStore(s => s.analysisResults)
-  const [aiText, setAiText] = useState('')
-  const [aiLoading, setAiLoading] = useState(false)
-  const [aiError, setAiError] = useState('')
+  const [aiNotice, setAiNotice] = useState(false)
 
   const stats = useMemo(() => {
     const flagged = Object.values(analysisResults).filter(r => r.tier !== 'Clean')
@@ -102,22 +98,8 @@ export default function Dashboard() {
     return Object.values(vm).sort((a, b) => b.score - a.score).slice(0, 5)
   }, [transactions, analysisResults])
 
-  async function runAuditSummary() {
-    setAiLoading(true)
-    setAiError('')
-    setAiText('')
-    try {
-      const tierBreakdown = {}
-      for (const r of Object.values(analysisResults)) {
-        tierBreakdown[r.tier] = (tierBreakdown[r.tier] || 0) + 1
-      }
-      const text = await getAuditSummary({ ...stats, tierBreakdown, topVendors })
-      setAiText(text)
-    } catch (e) {
-      setAiError(e.message)
-    } finally {
-      setAiLoading(false)
-    }
+  function runAuditSummary() {
+    setAiNotice(true)
   }
 
   return (
@@ -131,20 +113,20 @@ export default function Dashboard() {
         </div>
         <button
           onClick={runAuditSummary}
-          disabled={aiLoading || !transactions.length}
+          disabled={!transactions.length}
           style={{
-            background: aiLoading ? 'var(--accent-dim)' : 'var(--accent)',
+            background: 'var(--accent)',
             border: 'none',
             color: '#fff',
             padding: '10px 20px',
             fontSize: 12,
             fontFamily: 'IBM Plex Mono',
             fontWeight: 600,
-            cursor: aiLoading ? 'not-allowed' : 'pointer',
+            cursor: 'pointer',
             letterSpacing: '0.05em'
           }}
         >
-          {aiLoading ? '■ ANALYZING...' : '▶ RUN AI AUDIT SUMMARY'}
+          ▶ RUN AI AUDIT SUMMARY
         </button>
       </div>
 
@@ -156,12 +138,11 @@ export default function Dashboard() {
         <StatCard label="AVG RISK SCORE" value={stats.avgScore} sub="out of 100" />
       </div>
 
-      {aiError && (
-        <div style={{ background: 'rgba(224,82,82,0.1)', border: '1px solid var(--critical)', padding: '12px 16px', marginBottom: 16, fontFamily: 'IBM Plex Mono', fontSize: 12, color: 'var(--critical)' }}>
-          ERROR: {aiError}
+      {aiNotice && (
+        <div style={{ borderLeft: '3px solid #2D7DD2', background: '#111318', padding: '12px 16px', marginBottom: 16, fontFamily: 'IBM Plex Mono', fontSize: 12, color: 'var(--text-secondary)' }}>
+          AI features require an Anthropic API key. Add ANTHROPIC_API_KEY to your environment variables to enable this feature.
         </div>
       )}
-      {(aiLoading || aiText) && <AIResponse text={aiText} loading={aiLoading} />}
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginTop: 24 }}>
         <div style={{ background: 'var(--bg-panel)', border: '1px solid var(--border)', padding: '20px' }}>
