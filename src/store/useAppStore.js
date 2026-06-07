@@ -18,7 +18,20 @@ const useAppStore = create((set) => ({
   })),
   setSelectedTxn: (selectedTxn) => set({ selectedTxn }),
   setActiveTab: (activeTab) => set({ activeTab }),
-  setFilters: (filters) => set((state) => ({ filters: { ...state.filters, ...filters } }))
+  setFilters: (filters) => set((state) => ({ filters: { ...state.filters, ...filters } })),
+
+  companyData: null,
+  companyTransactions: [],
+  companyAnalysis: {},
+  companyLoading: false,
+  companyError: null,
+  companyTicker: '',
+  setCompanyData: (companyData) => set({ companyData }),
+  setCompanyTransactions: (companyTransactions) => set({ companyTransactions }),
+  setCompanyAnalysis: (companyAnalysis) => set({ companyAnalysis }),
+  setCompanyLoading: (companyLoading) => set({ companyLoading }),
+  setCompanyError: (companyError) => set({ companyError }),
+  setCompanyTicker: (companyTicker) => set({ companyTicker })
 }))
 
 export default useAppStore
