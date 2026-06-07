@@ -1,0 +1,98 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap');
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --bg-base: #0a0c10;
+  --bg-panel: #111318;
+  --bg-elevated: #161a22;
+  --accent: #2D7DD2;
+  --accent-dim: #1a4a7a;
+  --alert: #E8A020;
+  --border: #1e2330;
+  --border-bright: #2a3245;
+  --text-primary: #e8eaf0;
+  --text-secondary: #8892a4;
+  --text-muted: #4a5568;
+  --critical: #e05252;
+  --high: #c04080;
+  --medium: #E8A020;
+  --low: #4caf82;
+  --clean: #4a5568;
+}
+
+html, body, #root {
+  height: 100%;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: 'IBM Plex Sans', system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+input, select, textarea {
+  font-family: 'IBM Plex Mono', monospace;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-base);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-bright);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+.mono {
+  font-family: 'IBM Plex Mono', monospace;
+}
+
+.tier-critical { color: var(--critical); }
+.tier-high { color: var(--high); }
+.tier-medium { color: var(--medium); }
+.tier-low { color: var(--low); }
+.tier-clean { color: var(--clean); }
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  border: 1px solid;
+}
+
+.badge-high {
+  color: var(--critical);
+  border-color: var(--critical);
+  background: rgba(224, 82, 82, 0.1);
+}
+
+.badge-medium {
+  color: var(--alert);
+  border-color: var(--alert);
+  background: rgba(232, 160, 32, 0.1);
+}
+
+.badge-low {
+  color: var(--low);
+  border-color: var(--low);
+  background: rgba(76, 175, 130, 0.1);
+}
