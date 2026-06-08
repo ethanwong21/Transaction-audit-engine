@@ -1,46 +1,72 @@
-// All SEC requests go through local proxy paths so CORS is never an issue.
-// Dev:  Vite dev server proxies /api/sec-* → the respective SEC domain.
-// Prod: Vercel edge rewrites /api/sec-* → the respective SEC domain server-side.
+// Requests go through proxy paths in dev (Vite) and prod (Vercel rewrites).
+// If the proxy is unavailable, data.sec.gov APIs are also tried directly —
+// data.sec.gov sends proper CORS headers unlike www.sec.gov.
 
-const SEC_TICKERS_URL = '/api/sec-tickers'
 const SEC_DATA_BASE = '/api/sec-data'
-const SEC_EFTS_BASE = '/api/sec-efts'
+
+// ─── Hardcoded CIK table for the most-searched tickers ───────────────────────
+// These allow zero-network CIK resolution for common stocks.
+// CIKs are stable permanent identifiers assigned by the SEC.
+const KNOWN_TICKERS = {
+  AAPL:  { cik: '0000320193', name: 'Apple Inc.' },
+  MSFT:  { cik: '0000789019', name: 'Microsoft Corporation' },
+  GOOGL: { cik: '0001652044', name: 'Alphabet Inc.' },
+  GOOG:  { cik: '0001652044', name: 'Alphabet Inc.' },
+  AMZN:  { cik: '0001018724', name: 'Amazon.com Inc.' },
+  META:  { cik: '0001326801', name: 'Meta Platforms Inc.' },
+  TSLA:  { cik: '0001318605', name: 'Tesla Inc.' },
+  NVDA:  { cik: '0001045810', name: 'NVIDIA Corporation' },
+  NFLX:  { cik: '0001065280', name: 'Netflix Inc.' },
+  JPM:   { cik: '0000019617', name: 'JPMorgan Chase & Co.' },
+  BAC:   { cik: '0000070858', name: 'Bank of America Corporation' },
+  WMT:   { cik: '0000104169', name: 'Walmart Inc.' },
+  JNJ:   { cik: '0000200406', name: 'Johnson & Johnson' },
+  XOM:   { cik: '0000034088', name: 'Exxon Mobil Corporation' },
+  V:     { cik: '0001403161', name: 'Visa Inc.' },
+  MA:    { cik: '0001141391', name: 'Mastercard Incorporated' },
+  BRK:   { cik: '0001067983', name: 'Berkshire Hathaway Inc.' },
+  UNH:   { cik: '0000731766', name: 'UnitedHealth Group Incorporated' },
+  PG:    { cik: '0000080424', name: 'Procter & Gamble Co.' },
+  HD:    { cik: '0000354950', name: 'Home Depot Inc.' },
+  INTC:  { cik: '0000050863', name: 'Intel Corporation' },
+  AMD:   { cik: '0000002488', name: 'Advanced Micro Devices Inc.' },
+  PYPL:  { cik: '0001633917', name: 'PayPal Holdings Inc.' },
+  DIS:   { cik: '0001001039', name: 'Walt Disney Co.' },
+  BABA:  { cik: '0001577552', name: 'Alibaba Group Holding Ltd.' },
+  CRM:   { cik: '0001108524', name: 'Salesforce Inc.' },
+  ORCL:  { cik: '0001341439', name: 'Oracle Corporation' },
+  CSCO:  { cik: '0000858877', name: 'Cisco Systems Inc.' },
+  IBM:   { cik: '0000051143', name: 'International Business Machines Corp.' },
+  GE:    { cik: '0000040533', name: 'General Electric Company' },
+}
 
 let tickerMapCache = null
 
 // ─── CIK Resolution ───────────────────────────────────────────────────────────
 
-async function resolveViaSECSearch(query) {
-  // EDGAR EFTS full-text search — accession number _id always starts with 10-digit CIK
-  const encoded = encodeURIComponent('"' + query + '"')
-  const url = `${SEC_EFTS_BASE}/LATEST/search-index?q=${encoded}&forms=10-K&dateRange=custom&startdt=2018-01-01&enddt=2024-12-31`
-  const res = await fetch(url)
-  if (!res.ok) throw new Error(`Company not found: "${query}". Try the full legal name or ticker symbol.`)
-
-  const data = await res.json()
-  const hits = data?.hits?.hits || []
-  if (!hits.length) throw new Error(`Company not found: "${query}". Try the full legal name or ticker symbol.`)
-
-  const hit = hits[0]
-  // _id is like "0000320193-23-000106" → strip dashes → first 10 chars = CIK
-  const rawId = (hit._id || '').replace(/-/g, '')
-  const cik = rawId.slice(0, 10).padStart(10, '0')
-  const name = hit._source?.entity_name || query
-
-  if (!cik || cik === '0000000000') {
-    throw new Error(`Company not found: "${query}". Try the full legal name or ticker symbol.`)
-  }
-
-  return { cik, ticker: query.toUpperCase(), name }
-}
-
 export async function resolveToCIK(query) {
   const q = query.trim().toUpperCase()
   const qLower = query.trim().toLowerCase()
 
+  // 1. Accept direct CIK input (7–10 digit number)
+  if (/^\d{7,10}$/.test(query.trim())) {
+    const cik = query.trim().padStart(10, '0')
+    return { cik, ticker: cik, name: `CIK ${cik}` }
+  }
+
+  // 2. Check hardcoded known-ticker table (instant, no network)
+  if (KNOWN_TICKERS[q]) {
+    const entry = KNOWN_TICKERS[q]
+    return { cik: entry.cik, ticker: q, name: entry.name }
+  }
+
+  // 3. Try full ticker map via proxy (/api/sec-tickers → www.sec.gov)
   if (!tickerMapCache) {
     try {
-      const res = await fetch(SEC_TICKERS_URL)
+      const res = await Promise.race([
+        fetch('/api/sec-tickers'),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 8000))
+      ])
       if (res.ok) {
         tickerMapCache = await res.json()
       } else {
@@ -52,6 +78,7 @@ export async function resolveToCIK(query) {
   }
 
   if (tickerMapCache && Object.keys(tickerMapCache).length > 0) {
+    // Exact ticker match
     for (const entry of Object.values(tickerMapCache)) {
       if (entry.ticker.toUpperCase() === q) {
         return {
@@ -61,6 +88,7 @@ export async function resolveToCIK(query) {
         }
       }
     }
+    // Fuzzy name match
     for (const entry of Object.values(tickerMapCache)) {
       if (entry.title.toLowerCase().includes(qLower)) {
         return {
@@ -72,8 +100,14 @@ export async function resolveToCIK(query) {
     }
   }
 
-  // Ticker map unavailable or no match — fall back to EFTS search
-  return resolveViaSECSearch(query)
+  // 4. Ticker map unavailable or no match
+  throw new Error(
+    `Company "${query}" not found.\n\n` +
+    `Try:\n` +
+    `• A known ticker: AAPL, MSFT, TSLA, NVDA, META, AMZN, GOOGL\n` +
+    `• The full legal company name\n` +
+    `• The 10-digit SEC CIK number (e.g. 0000320193 for Apple)`
+  )
 }
 
 // ─── SEC Financials ───────────────────────────────────────────────────────────
@@ -89,17 +123,27 @@ const FINANCIAL_CONCEPTS = [
   { key: 'StockholdersEquity', label: "Stockholders' Equity" }
 ]
 
-export async function fetchSECFinancials(cik) {
-  const url = `${SEC_DATA_BASE}/api/xbrl/companyfacts/CIK${cik}.json`
-  const res = await fetch(url)
+async function secFetch(path) {
+  // Try proxy path first, fall back to direct data.sec.gov (CORS-enabled)
+  let res
+  try {
+    res = await fetch(`${SEC_DATA_BASE}${path}`)
+    if (res.ok) return res
+  } catch { /* proxy unavailable */ }
 
+  // Direct fallback — data.sec.gov does send CORS headers
+  res = await fetch(`https://data.sec.gov${path}`)
   if (res.status === 429) {
     const err = new Error('SEC_RATE_LIMIT')
     err.code = 'SEC_RATE_LIMIT'
     throw err
   }
-  if (!res.ok) throw new Error(`SEC financials fetch failed: ${res.status}`)
+  if (!res.ok) throw new Error(`SEC request failed: ${res.status} for ${path}`)
+  return res
+}
 
+export async function fetchSECFinancials(cik) {
+  const res = await secFetch(`/api/xbrl/companyfacts/CIK${cik}.json`)
   const data = await res.json()
   const usGaap = data['facts']?.['us-gaap'] || {}
   const extracted = {}
@@ -126,16 +170,7 @@ export async function fetchSECFinancials(cik) {
 // ─── SEC Filings ──────────────────────────────────────────────────────────────
 
 export async function fetchSECFilings(cik) {
-  const url = `${SEC_DATA_BASE}/submissions/CIK${cik}.json`
-  const res = await fetch(url)
-
-  if (res.status === 429) {
-    const err = new Error('SEC_RATE_LIMIT')
-    err.code = 'SEC_RATE_LIMIT'
-    throw err
-  }
-  if (!res.ok) throw new Error(`SEC filings fetch failed: ${res.status}`)
-
+  const res = await secFetch(`/submissions/CIK${cik}.json`)
   const data = await res.json()
   const recent = data.filings?.recent || {}
 
@@ -163,12 +198,9 @@ export async function fetchSECFilings(cik) {
 // ─── Insider Trades ───────────────────────────────────────────────────────────
 
 export async function fetchInsiderTrades(cik) {
-  // Reuses same submissions endpoint — filtered for Form 4
-  const url = `${SEC_DATA_BASE}/submissions/CIK${cik}.json`
   let res
   try {
-    res = await fetch(url)
-    if (!res.ok) return []
+    res = await secFetch(`/submissions/CIK${cik}.json`)
   } catch {
     return []
   }
@@ -188,12 +220,13 @@ export async function fetchInsiderTrades(cik) {
   return trades
 }
 
-// ─── Price Data (best-effort, will be CORS-blocked in browser) ───────────────
+// ─── Price Data ───────────────────────────────────────────────────────────────
 
 export async function fetchPriceData(ticker) {
   try {
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1mo&range=2y`
-    const res = await fetch(url)
+    const res = await fetch(
+      `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1mo&range=2y`
+    )
     if (!res.ok) return null
     const data = await res.json()
     const result = data?.chart?.result?.[0]

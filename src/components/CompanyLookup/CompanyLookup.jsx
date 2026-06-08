@@ -499,11 +499,7 @@ export default function CompanyLookup() {
       setStepsComplete(true)
     } catch (e) {
       const msg = e.message || String(e)
-      if (msg.toLowerCase().includes('not found')) {
-        setCompanyError({ type: 'not_found', message: msg })
-      } else {
-        setCompanyError({ type: 'general', message: msg })
-      }
+      setCompanyError({ type: 'general', message: msg })
     } finally {
       setCompanyLoading(false)
       setCurrentStep(null)
@@ -545,7 +541,7 @@ export default function CompanyLookup() {
         <input
           value={query}
           onChange={e => setQuery(e.target.value)}
-          placeholder="Enter company name or ticker (e.g. AAPL, Tesla)"
+          placeholder="Ticker (AAPL), company name, or 10-digit CIK"
           disabled={companyLoading}
           style={inputStyle}
         />
@@ -578,26 +574,26 @@ export default function CompanyLookup() {
         </div>
       )}
 
-      {/* Not found error */}
-      {companyError?.type === 'not_found' && (
-        <div style={{
-          border: '1px solid var(--critical)', borderLeft: '3px solid var(--critical)',
-          background: 'rgba(224,82,82,0.06)', padding: '16px 20px', marginBottom: 16,
-          fontFamily: 'IBM Plex Mono', fontSize: 12, color: 'var(--critical)'
-        }}>
-          Company not found. Try the full legal name or ticker symbol.
-        </div>
-      )}
-
-      {/* General error */}
+      {/* Error state */}
       {companyError?.type === 'general' && (
         <div style={{
           border: '1px solid var(--critical)', borderLeft: '3px solid var(--critical)',
           background: 'rgba(224,82,82,0.06)', padding: '16px 20px', marginBottom: 16,
-          fontFamily: 'IBM Plex Mono', fontSize: 12, color: 'var(--critical)'
+          fontFamily: 'IBM Plex Mono', fontSize: 12
         }}>
-          <div style={{ fontWeight: 700, marginBottom: 4 }}>ERROR</div>
-          {companyError.message}
+          <div style={{ color: 'var(--critical)', fontWeight: 700, marginBottom: 8 }}>LOOKUP FAILED</div>
+          <pre style={{ color: 'var(--text-secondary)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: 0, marginBottom: 12, fontSize: 11, lineHeight: 1.7 }}>
+            {companyError.message}
+          </pre>
+          <div style={{ color: 'var(--text-muted)', fontSize: 11 }}>
+            Guaranteed to work (no network needed):{' '}
+            {['AAPL','MSFT','TSLA','NVDA','META','AMZN','GOOGL','JPM','NFLX','ORCL'].map(t => (
+              <button key={t} onClick={() => { setQuery(t); doSearch(t) }}
+                style={{ background: 'none', border: '1px solid var(--border)', color: 'var(--accent)', padding: '2px 8px', fontSize: 11, fontFamily: 'IBM Plex Mono', cursor: 'pointer', marginRight: 4, marginTop: 4 }}>
+                {t}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
@@ -616,12 +612,19 @@ export default function CompanyLookup() {
           padding: '48px', textAlign: 'center', color: 'var(--text-muted)'
         }}>
           <div style={{ fontSize: 32, marginBottom: 16 }}>⌕</div>
-          <div style={{ fontFamily: 'IBM Plex Mono', fontSize: 13, marginBottom: 8 }}>
+          <div style={{ fontFamily: 'IBM Plex Mono', fontSize: 13, marginBottom: 12 }}>
             Search for any public company
           </div>
-          <div style={{ fontSize: 12 }}>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 16 }}>
             Uses SEC EDGAR public APIs — no API key required.
-            Try: AAPL · MSFT · TSLA · AMZN · META
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
+            {['AAPL','MSFT','TSLA','NVDA','META','AMZN','GOOGL','JPM','NFLX','ORCL'].map(t => (
+              <button key={t} onClick={() => { setQuery(t); doSearch(t) }}
+                style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--accent)', padding: '6px 14px', fontSize: 12, fontFamily: 'IBM Plex Mono', fontWeight: 600, cursor: 'pointer' }}>
+                {t}
+              </button>
+            ))}
           </div>
         </div>
       )}
