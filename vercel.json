@@ -6,5 +6,10 @@
     "api/*.js": {
       "runtime": "nodejs20.x"
     }
-  }
+  },
+  "rewrites": [
+    { "source": "/api/sec-tickers", "destination": "https://www.sec.gov/files/company_tickers.json" },
+    { "source": "/api/sec-efts/:path*", "destination": "https://efts.sec.gov/:path*" },
+    { "source": "/api/sec-data/:path*", "destination": "https://data.sec.gov/:path*" }
+  ]
 }

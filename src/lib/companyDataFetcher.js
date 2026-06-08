@@ -1,14 +1,19 @@
-// Cached ticker map to avoid re-fetching
+// All SEC requests go through local proxy paths so CORS is never an issue.
+// Dev:  Vite dev server proxies /api/sec-* → the respective SEC domain.
+// Prod: Vercel edge rewrites /api/sec-* → the respective SEC domain server-side.
+
+const SEC_TICKERS_URL = '/api/sec-tickers'
+const SEC_DATA_BASE = '/api/sec-data'
+const SEC_EFTS_BASE = '/api/sec-efts'
+
 let tickerMapCache = null
 
 // ─── CIK Resolution ───────────────────────────────────────────────────────────
 
 async function resolveViaSECSearch(query) {
-  // EDGAR full-text search — efts.sec.gov is CORS-enabled
-  // The accession number _id format is {10-digit-CIK}-{year}-{sequence}
-  // so the first 10 chars of _id are always the CIK.
+  // EDGAR EFTS full-text search — accession number _id always starts with 10-digit CIK
   const encoded = encodeURIComponent('"' + query + '"')
-  const url = `https://efts.sec.gov/LATEST/search-index?q=${encoded}&forms=10-K&dateRange=custom&startdt=2018-01-01&enddt=2024-12-31`
+  const url = `${SEC_EFTS_BASE}/LATEST/search-index?q=${encoded}&forms=10-K&dateRange=custom&startdt=2018-01-01&enddt=2024-12-31`
   const res = await fetch(url)
   if (!res.ok) throw new Error(`Company not found: "${query}". Try the full legal name or ticker symbol.`)
 
@@ -17,7 +22,8 @@ async function resolveViaSECSearch(query) {
   if (!hits.length) throw new Error(`Company not found: "${query}". Try the full legal name or ticker symbol.`)
 
   const hit = hits[0]
-  const rawId = (hit._id || '').replace(/-/g, '')  // e.g. "0000320193-23-000106" → "000032019323000106"
+  // _id is like "0000320193-23-000106" → strip dashes → first 10 chars = CIK
+  const rawId = (hit._id || '').replace(/-/g, '')
   const cik = rawId.slice(0, 10).padStart(10, '0')
   const name = hit._source?.entity_name || query
 
@@ -32,22 +38,20 @@ export async function resolveToCIK(query) {
   const q = query.trim().toUpperCase()
   const qLower = query.trim().toLowerCase()
 
-  // Try the SEC ticker map — silently fall through if CORS blocks www.sec.gov
   if (!tickerMapCache) {
     try {
-      const res = await fetch('https://www.sec.gov/files/company_tickers.json')
+      const res = await fetch(SEC_TICKERS_URL)
       if (res.ok) {
         tickerMapCache = await res.json()
       } else {
-        tickerMapCache = {}  // mark attempted so we don't retry
+        tickerMapCache = {}
       }
     } catch {
-      tickerMapCache = {}  // CORS blocked — fall through to EFTS
+      tickerMapCache = {}
     }
   }
 
   if (tickerMapCache && Object.keys(tickerMapCache).length > 0) {
-    // Exact ticker match
     for (const entry of Object.values(tickerMapCache)) {
       if (entry.ticker.toUpperCase() === q) {
         return {
@@ -57,7 +61,6 @@ export async function resolveToCIK(query) {
         }
       }
     }
-    // Fuzzy name match
     for (const entry of Object.values(tickerMapCache)) {
       if (entry.title.toLowerCase().includes(qLower)) {
         return {
@@ -69,7 +72,7 @@ export async function resolveToCIK(query) {
     }
   }
 
-  // Fallback: EDGAR EFTS search (CORS-safe, data.sec.gov infrastructure)
+  // Ticker map unavailable or no match — fall back to EFTS search
   return resolveViaSECSearch(query)
 }
 
@@ -87,7 +90,7 @@ const FINANCIAL_CONCEPTS = [
 ]
 
 export async function fetchSECFinancials(cik) {
-  const url = `https://data.sec.gov/api/xbrl/companyfacts/CIK${cik}.json`
+  const url = `${SEC_DATA_BASE}/api/xbrl/companyfacts/CIK${cik}.json`
   const res = await fetch(url)
 
   if (res.status === 429) {
@@ -102,12 +105,11 @@ export async function fetchSECFinancials(cik) {
   const extracted = {}
 
   for (const concept of FINANCIAL_CONCEPTS) {
-    if (extracted[concept.label]) continue  // already captured from an alias
+    if (extracted[concept.label]) continue
     const conceptData = usGaap[concept.key]
     if (!conceptData) continue
 
-    const units = conceptData.units
-    const usdData = units?.USD || units?.shares || null
+    const usdData = conceptData.units?.USD || conceptData.units?.shares || null
     if (!usdData) continue
 
     const periods = usdData
@@ -121,10 +123,10 @@ export async function fetchSECFinancials(cik) {
   return extracted
 }
 
-// ─── SEC Filings + Insider Trades (single fetch) ─────────────────────────────
+// ─── SEC Filings ──────────────────────────────────────────────────────────────
 
 export async function fetchSECFilings(cik) {
-  const url = `https://data.sec.gov/submissions/CIK${cik}.json`
+  const url = `${SEC_DATA_BASE}/submissions/CIK${cik}.json`
   const res = await fetch(url)
 
   if (res.status === 429) {
@@ -158,11 +160,11 @@ export async function fetchSECFilings(cik) {
   return { filings, companyInfo }
 }
 
-// Reuses already-fetched submissions data — no second network request needed
+// ─── Insider Trades ───────────────────────────────────────────────────────────
+
 export async function fetchInsiderTrades(cik) {
-  const url = `https://data.sec.gov/submissions/CIK${cik}.json`
-  // We hit the same URL as fetchSECFilings; data.sec.gov returns cached responses
-  // quickly, but we dedupe the response parsing to avoid double network cost.
+  // Reuses same submissions endpoint — filtered for Form 4
+  const url = `${SEC_DATA_BASE}/submissions/CIK${cik}.json`
   let res
   try {
     res = await fetch(url)
@@ -186,7 +188,7 @@ export async function fetchInsiderTrades(cik) {
   return trades
 }
 
-// ─── Price Data (best-effort, CORS-blocked in most browsers) ─────────────────
+// ─── Price Data (best-effort, will be CORS-blocked in browser) ───────────────
 
 export async function fetchPriceData(ticker) {
   try {
