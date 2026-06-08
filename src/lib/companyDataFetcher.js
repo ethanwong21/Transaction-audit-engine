@@ -1,4 +1,5 @@
-const SEC_HEADERS = { 'User-Agent': 'TransactionAuditEngine contact@example.com' }
+// User-Agent is a forbidden header in browser fetch — omit it; SEC EDGAR doesn't require it client-side
+const SEC_HEADERS = { 'Accept': 'application/json' }
 
 // Cached ticker map to avoid re-fetching
 let tickerMapCache = null
