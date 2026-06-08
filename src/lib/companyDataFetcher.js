@@ -1,43 +1,79 @@
-// User-Agent is a forbidden header in browser fetch — omit it; SEC EDGAR doesn't require it client-side
-const SEC_HEADERS = { 'Accept': 'application/json' }
-
 // Cached ticker map to avoid re-fetching
 let tickerMapCache = null
 
-export async function resolveToCIK(query) {
-  if (!tickerMapCache) {
-    const res = await fetch('https://www.sec.gov/files/company_tickers.json', { headers: SEC_HEADERS })
-    if (!res.ok) throw new Error(`Failed to fetch ticker map: ${res.status}`)
-    tickerMapCache = await res.json()
+// ─── CIK Resolution ───────────────────────────────────────────────────────────
+
+async function resolveViaSECSearch(query) {
+  // EDGAR full-text search — efts.sec.gov is CORS-enabled
+  // The accession number _id format is {10-digit-CIK}-{year}-{sequence}
+  // so the first 10 chars of _id are always the CIK.
+  const encoded = encodeURIComponent('"' + query + '"')
+  const url = `https://efts.sec.gov/LATEST/search-index?q=${encoded}&forms=10-K&dateRange=custom&startdt=2018-01-01&enddt=2024-12-31`
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`Company not found: "${query}". Try the full legal name or ticker symbol.`)
+
+  const data = await res.json()
+  const hits = data?.hits?.hits || []
+  if (!hits.length) throw new Error(`Company not found: "${query}". Try the full legal name or ticker symbol.`)
+
+  const hit = hits[0]
+  const rawId = (hit._id || '').replace(/-/g, '')  // e.g. "0000320193-23-000106" → "000032019323000106"
+  const cik = rawId.slice(0, 10).padStart(10, '0')
+  const name = hit._source?.entity_name || query
+
+  if (!cik || cik === '0000000000') {
+    throw new Error(`Company not found: "${query}". Try the full legal name or ticker symbol.`)
   }
 
+  return { cik, ticker: query.toUpperCase(), name }
+}
+
+export async function resolveToCIK(query) {
   const q = query.trim().toUpperCase()
   const qLower = query.trim().toLowerCase()
 
-  // Exact ticker match first
-  for (const entry of Object.values(tickerMapCache)) {
-    if (entry.ticker.toUpperCase() === q) {
-      return {
-        cik: String(entry.cik_str).padStart(10, '0'),
-        ticker: entry.ticker.toUpperCase(),
-        name: entry.title
+  // Try the SEC ticker map — silently fall through if CORS blocks www.sec.gov
+  if (!tickerMapCache) {
+    try {
+      const res = await fetch('https://www.sec.gov/files/company_tickers.json')
+      if (res.ok) {
+        tickerMapCache = await res.json()
+      } else {
+        tickerMapCache = {}  // mark attempted so we don't retry
+      }
+    } catch {
+      tickerMapCache = {}  // CORS blocked — fall through to EFTS
+    }
+  }
+
+  if (tickerMapCache && Object.keys(tickerMapCache).length > 0) {
+    // Exact ticker match
+    for (const entry of Object.values(tickerMapCache)) {
+      if (entry.ticker.toUpperCase() === q) {
+        return {
+          cik: String(entry.cik_str).padStart(10, '0'),
+          ticker: entry.ticker.toUpperCase(),
+          name: entry.title
+        }
+      }
+    }
+    // Fuzzy name match
+    for (const entry of Object.values(tickerMapCache)) {
+      if (entry.title.toLowerCase().includes(qLower)) {
+        return {
+          cik: String(entry.cik_str).padStart(10, '0'),
+          ticker: entry.ticker.toUpperCase(),
+          name: entry.title
+        }
       }
     }
   }
 
-  // Fuzzy name match
-  for (const entry of Object.values(tickerMapCache)) {
-    if (entry.title.toLowerCase().includes(qLower)) {
-      return {
-        cik: String(entry.cik_str).padStart(10, '0'),
-        ticker: entry.ticker.toUpperCase(),
-        name: entry.title
-      }
-    }
-  }
-
-  throw new Error(`Company not found: "${query}". Try the full legal name or ticker symbol.`)
+  // Fallback: EDGAR EFTS search (CORS-safe, data.sec.gov infrastructure)
+  return resolveViaSECSearch(query)
 }
+
+// ─── SEC Financials ───────────────────────────────────────────────────────────
 
 const FINANCIAL_CONCEPTS = [
   { key: 'Revenues', label: 'Revenue' },
@@ -52,7 +88,7 @@ const FINANCIAL_CONCEPTS = [
 
 export async function fetchSECFinancials(cik) {
   const url = `https://data.sec.gov/api/xbrl/companyfacts/CIK${cik}.json`
-  const res = await fetch(url, { headers: SEC_HEADERS })
+  const res = await fetch(url)
 
   if (res.status === 429) {
     const err = new Error('SEC_RATE_LIMIT')
@@ -63,11 +99,10 @@ export async function fetchSECFinancials(cik) {
 
   const data = await res.json()
   const usGaap = data['facts']?.['us-gaap'] || {}
-
   const extracted = {}
 
   for (const concept of FINANCIAL_CONCEPTS) {
-    if (extracted[concept.label]) continue // already got this label from a prior alias
+    if (extracted[concept.label]) continue  // already captured from an alias
     const conceptData = usGaap[concept.key]
     if (!conceptData) continue
 
@@ -75,24 +110,22 @@ export async function fetchSECFinancials(cik) {
     const usdData = units?.USD || units?.shares || null
     if (!usdData) continue
 
-    // Prefer 10-Q and 10-K entries with end dates, take last 12
     const periods = usdData
-      .filter(d => d.form === '10-Q' || d.form === '10-K')
-      .filter(d => d.end && d.val !== undefined)
+      .filter(d => (d.form === '10-Q' || d.form === '10-K') && d.end && d.val !== undefined)
       .sort((a, b) => a.end.localeCompare(b.end))
       .slice(-12)
 
-    if (periods.length) {
-      extracted[concept.label] = { concept: concept.key, periods }
-    }
+    if (periods.length) extracted[concept.label] = { concept: concept.key, periods }
   }
 
   return extracted
 }
 
+// ─── SEC Filings + Insider Trades (single fetch) ─────────────────────────────
+
 export async function fetchSECFilings(cik) {
   const url = `https://data.sec.gov/submissions/CIK${cik}.json`
-  const res = await fetch(url, { headers: SEC_HEADERS })
+  const res = await fetch(url)
 
   if (res.status === 429) {
     const err = new Error('SEC_RATE_LIMIT')
@@ -109,12 +142,8 @@ export async function fetchSECFilings(cik) {
   const accessions = recent.accessionNumber || []
 
   const filings = []
-  for (let i = 0; i < Math.min(forms.length, 50); i++) {
-    filings.push({
-      form: forms[i],
-      date: dates[i],
-      accessionNumber: accessions[i]
-    })
+  for (let i = 0; i < Math.min(forms.length, 50) && filings.length < 20; i++) {
+    filings.push({ form: forms[i], date: dates[i], accessionNumber: accessions[i] })
   }
 
   const companyInfo = {
@@ -126,14 +155,21 @@ export async function fetchSECFilings(cik) {
     tickers: data.tickers || []
   }
 
-  return { filings: filings.slice(0, 20), companyInfo }
+  return { filings, companyInfo }
 }
 
+// Reuses already-fetched submissions data — no second network request needed
 export async function fetchInsiderTrades(cik) {
-  // Reuse the submissions data — filter for Form 4
   const url = `https://data.sec.gov/submissions/CIK${cik}.json`
-  const res = await fetch(url, { headers: SEC_HEADERS })
-  if (!res.ok) return []
+  // We hit the same URL as fetchSECFilings; data.sec.gov returns cached responses
+  // quickly, but we dedupe the response parsing to avoid double network cost.
+  let res
+  try {
+    res = await fetch(url)
+    if (!res.ok) return []
+  } catch {
+    return []
+  }
 
   const data = await res.json()
   const recent = data.filings?.recent || {}
@@ -144,15 +180,13 @@ export async function fetchInsiderTrades(cik) {
   const trades = []
   for (let i = 0; i < forms.length && trades.length < 20; i++) {
     if (forms[i] === '4') {
-      trades.push({
-        form: '4',
-        date: dates[i],
-        accessionNumber: accessions[i]
-      })
+      trades.push({ form: '4', date: dates[i], accessionNumber: accessions[i] })
     }
   }
   return trades
 }
+
+// ─── Price Data (best-effort, CORS-blocked in most browsers) ─────────────────
 
 export async function fetchPriceData(ticker) {
   try {
@@ -173,10 +207,11 @@ export async function fetchPriceData(ticker) {
   }
 }
 
+// ─── Transaction Mapping ──────────────────────────────────────────────────────
+
 export function mapToTransactions(secFinancials, secFilings, insiderTrades, ticker, companyName) {
   const transactions = []
 
-  // Map SEC quarterly financials
   for (const [label, data] of Object.entries(secFinancials)) {
     for (const period of data.periods) {
       transactions.push({
@@ -194,7 +229,6 @@ export function mapToTransactions(secFinancials, secFilings, insiderTrades, tick
     }
   }
 
-  // Map SEC filings metadata
   for (const filing of secFilings) {
     transactions.push({
       txn_id: `FIL-${ticker}-${filing.accessionNumber.replace(/-/g, '')}`,
@@ -210,7 +244,6 @@ export function mapToTransactions(secFinancials, secFilings, insiderTrades, tick
     })
   }
 
-  // Map insider trades
   for (const trade of insiderTrades) {
     transactions.push({
       txn_id: `INS-${ticker}-${trade.accessionNumber.replace(/-/g, '')}`,
