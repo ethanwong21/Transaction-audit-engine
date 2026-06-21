@@ -38,7 +38,7 @@ export default function DetailPanel() {
 
   if (!selectedTxn) return null
 
-  const result = analysisResults[selectedTxn.txn_id] || { score: 0, tier: 'Clean', flags: [] }
+  const result = analysisResults[selectedTxn.txn_id] || { compositeScore: 0, ruleScore: 0, mlScore: 0, mlIsAnomaly: false, tier: 'Clean', ruleFlags: [] }
   const state = reviewState[selectedTxn.txn_id] || {}
   const tierColor = TIER_COLORS[result.tier]
 
@@ -78,7 +78,7 @@ export default function DetailPanel() {
               {selectedTxn.txn_id}
             </div>
             <div style={{ fontSize: 11, color: tierColor, fontFamily: 'IBM Plex Mono', fontWeight: 600, marginTop: 2 }}>
-              {result.tier.toUpperCase()} · SCORE {result.score}
+              {result.tier.toUpperCase()} · SCORE {result.compositeScore}
             </div>
           </div>
           <button onClick={close} style={{ background: 'none', border: '1px solid var(--border)', color: 'var(--text-secondary)', padding: '6px 12px', fontSize: 12, fontFamily: 'IBM Plex Mono', cursor: 'pointer' }}>
@@ -99,11 +99,11 @@ export default function DetailPanel() {
             <Field label="SUBMITTED BY" value={selectedTxn.submitted_by} />
           </div>
 
-          {result.flags.length > 0 && (
+          {(result.ruleFlags || []).length > 0 && (
             <div style={{ marginBottom: 20 }}>
               <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'IBM Plex Mono', letterSpacing: '0.1em', marginBottom: 12 }}>ACTIVE FLAGS</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {result.flags.map(flag => (
+                {result.ruleFlags.map(flag => (
                   <div key={flag.rule} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: 'var(--bg-base)', border: '1px solid var(--border)' }}>
                     <div>
                       <FlagBadge flag={flag} />
@@ -115,6 +115,30 @@ export default function DetailPanel() {
               </div>
             </div>
           )}
+
+          <div style={{ marginBottom: 20, background: 'var(--bg-base)', border: '1px solid var(--border)', padding: '12px 16px' }}>
+            <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'IBM Plex Mono', letterSpacing: '0.1em', marginBottom: 10 }}>DETECTION BREAKDOWN</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 8 }}>
+              <div>
+                <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'IBM Plex Mono', marginBottom: 3 }}>RULE SCORE</div>
+                <div style={{ fontFamily: 'IBM Plex Mono', fontSize: 13 }}>{result.ruleScore}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'IBM Plex Mono', marginBottom: 3 }}>ML SCORE</div>
+                <div style={{ fontFamily: 'IBM Plex Mono', fontSize: 13, color: result.mlIsAnomaly ? '#a78bfa' : 'var(--text-primary)' }}>
+                  {(result.mlScore * 100).toFixed(0)}
+                  {result.mlIsAnomaly && <span style={{ fontSize: 9, marginLeft: 4, color: '#a78bfa' }}>▲ ANOMALY</span>}
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'IBM Plex Mono', marginBottom: 3 }}>COMPOSITE</div>
+                <div style={{ fontFamily: 'IBM Plex Mono', fontSize: 13, color: 'var(--accent)' }}>{result.compositeScore}</div>
+              </div>
+            </div>
+            <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'IBM Plex Mono' }}>
+              formula: rule×0.7 + ml×0.3 · {result.mlIsAnomaly ? 'Isolation Forest flagged this as a statistical outlier in the transaction population.' : 'Isolation Forest considers this transaction normal relative to the population.'}
+            </div>
+          </div>
 
           {peerMean !== null && (
             <div style={{ marginBottom: 20, background: 'var(--bg-base)', border: '1px solid var(--border)', padding: '12px 16px' }}>

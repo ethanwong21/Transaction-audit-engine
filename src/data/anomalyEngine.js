@@ -32,7 +32,16 @@ function isRoundNumber(amount) {
   return amount >= 10000 && amount % 1000 === 0
 }
 
+import { runIsolationForest } from '../lib/isolationForestEngine.js'
+
+export function getCompositeRiskScore(ruleScore, mlScore) {
+  return Math.min(100, Math.round(ruleScore * 0.7 + mlScore * 100 * 0.3))
+}
+
 export function runAnomalyDetection(transactions) {
+  const mlScores = (() => {
+    try { return runIsolationForest(transactions) } catch { return {} }
+  })()
   const results = {}
 
   // Precompute vendor stats
@@ -120,16 +129,20 @@ export function runAnomalyDetection(transactions) {
       score += 35
     }
 
-    score = Math.min(score, 100)
+    const ruleScore = Math.min(score, 100)
+
+    const mlScore = mlScores[txn.txn_id] ?? 0
+    const mlIsAnomaly = mlScore > 0.6
+    const compositeScore = getCompositeRiskScore(ruleScore, mlScore)
 
     let tier
-    if (score >= 75) tier = 'Critical'
-    else if (score >= 50) tier = 'High'
-    else if (score >= 25) tier = 'Medium'
-    else if (score >= 1) tier = 'Low'
+    if (compositeScore >= 75) tier = 'Critical'
+    else if (compositeScore >= 50) tier = 'High'
+    else if (compositeScore >= 25) tier = 'Medium'
+    else if (compositeScore >= 1) tier = 'Low'
     else tier = 'Clean'
 
-    results[txn.txn_id] = { score, tier, flags }
+    results[txn.txn_id] = { ruleScore, ruleFlags: flags, mlScore, mlIsAnomaly, compositeScore, tier }
   }
 
   return results

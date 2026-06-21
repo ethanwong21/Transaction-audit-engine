@@ -6,7 +6,6 @@ import ReviewQueue from './views/ReviewQueue'
 import VendorRisk from './views/VendorRisk'
 import ControlsTesting from './views/ControlsTesting'
 import DataImport from './views/DataImport'
-import CompanyLookup from './components/CompanyLookup/CompanyLookup'
 import { generateTransactions } from './data/generateData'
 import { runAnomalyDetection } from './data/anomalyEngine'
 
@@ -47,7 +46,7 @@ export default function App() {
         {activeTab === 'vendor' && <VendorRisk />}
         {activeTab === 'controls' && <ControlsTesting />}
         {activeTab === 'import' && <DataImport />}
-        {activeTab === 'company-lookup' && <CompanyLookup />}
+
       </div>
     </div>
   )

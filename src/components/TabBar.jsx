@@ -7,7 +7,6 @@ const tabs = [
   { id: 'vendor', label: 'Vendor Risk', key: null },
   { id: 'controls', label: 'Controls Testing', key: null },
   { id: 'import', label: 'Data Import', key: null },
-  { id: 'company-lookup', label: '⌕ Company Lookup', key: null }
 ]
 
 export default function TabBar() {

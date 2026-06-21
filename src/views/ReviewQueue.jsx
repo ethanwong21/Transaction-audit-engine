@@ -28,7 +28,7 @@ export default function ReviewQueue() {
   const departments = useMemo(() => ['all', ...new Set(transactions.map(t => t.department))].sort(), [transactions])
   const flagTypes = useMemo(() => {
     const types = new Set()
-    Object.values(analysisResults).forEach(r => r.flags.forEach(f => types.add(f.rule)))
+    Object.values(analysisResults).forEach(r => (r.ruleFlags || []).forEach(f => types.add(f.rule)))
     return ['all', ...types]
   }, [analysisResults])
 
@@ -41,7 +41,7 @@ export default function ReviewQueue() {
     const r = analysisResults[t.txn_id]
     if (filters.tier !== 'all' && r.tier !== filters.tier) return false
     if (filters.department !== 'all' && t.department !== filters.department) return false
-    if (filters.flagType !== 'all' && !r.flags.some(f => f.rule === filters.flagType)) return false
+    if (filters.flagType !== 'all' && !(r.ruleFlags || []).some(f => f.rule === filters.flagType)) return false
     if (filters.dateRange) {
       const [start, end] = filters.dateRange
       if (t.date < start || t.date > end) return false
@@ -54,12 +54,12 @@ export default function ReviewQueue() {
     const br = analysisResults[b.txn_id]
     let av, bv
     switch (sortCol) {
-      case 'score': av = ar.score; bv = br.score; break
+      case 'score': av = ar.compositeScore; bv = br.compositeScore; break
       case 'date': av = a.date; bv = b.date; break
       case 'amount': av = a.amount; bv = b.amount; break
       case 'vendor': av = a.vendor; bv = b.vendor; break
       case 'department': av = a.department; bv = b.department; break
-      default: av = ar.score; bv = br.score
+      default: av = ar.compositeScore; bv = br.compositeScore
     }
     if (typeof av === 'string') return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av)
     return sortDir === 'asc' ? av - bv : bv - av
@@ -145,8 +145,11 @@ export default function ReviewQueue() {
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                 >
                   <td style={{ padding: '10px 12px' }}>
-                    <ScoreBar score={r.score} tier={r.tier} compact />
-                    <div style={{ fontSize: 10, color: TIER_COLORS[r.tier], fontFamily: 'IBM Plex Mono', marginTop: 2 }}>{r.tier.toUpperCase()}</div>
+                    <ScoreBar score={r.compositeScore} tier={r.tier} compact />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                      <span style={{ fontSize: 10, color: TIER_COLORS[r.tier], fontFamily: 'IBM Plex Mono' }}>{r.tier.toUpperCase()}</span>
+                      {r.mlIsAnomaly && <span title="Flagged by ML model" style={{ fontSize: 9, background: '#a78bfa22', border: '1px solid #a78bfa', color: '#a78bfa', fontFamily: 'IBM Plex Mono', padding: '1px 4px' }}>ML</span>}
+                    </div>
                   </td>
                   <td style={{ padding: '10px 12px', fontFamily: 'IBM Plex Mono', fontSize: 12, color: 'var(--accent)' }}>{t.txn_id}</td>
                   <td style={{ padding: '10px 12px', fontFamily: 'IBM Plex Mono', fontSize: 12 }}>{t.date}</td>
@@ -155,8 +158,8 @@ export default function ReviewQueue() {
                   <td style={{ padding: '10px 12px', fontSize: 12, color: 'var(--text-secondary)' }}>{t.department}</td>
                   <td style={{ padding: '10px 12px' }}>
                     <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                      {r.flags.slice(0, 2).map(f => <FlagBadge key={f.rule} flag={f} />)}
-                      {r.flags.length > 2 && <span style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'IBM Plex Mono' }}>+{r.flags.length - 2}</span>}
+                      {(r.ruleFlags || []).slice(0, 2).map(f => <FlagBadge key={f.rule} flag={f} />)}
+                      {(r.ruleFlags || []).length > 2 && <span style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'IBM Plex Mono' }}>+{r.ruleFlags.length - 2}</span>}
                     </div>
                   </td>
                   <td style={{ padding: '10px 12px' }}>
