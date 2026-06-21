@@ -23,8 +23,8 @@ export default function VendorRisk() {
       vm[t.vendor].txns.push(t)
       vm[t.vendor].amounts.push(t.amount)
       const r = analysisResults[t.txn_id]
-      if (r && r.flags.length > 0) vm[t.vendor].flagCount++
-      if (r) vm[t.vendor].maxScore = Math.max(vm[t.vendor].maxScore, r.score)
+      if (r && (r.ruleFlags || []).length > 0) vm[t.vendor].flagCount++
+      if (r) vm[t.vendor].maxScore = Math.max(vm[t.vendor].maxScore, r.compositeScore)
     }
     return Object.values(vm).map(v => ({
       ...v,
@@ -183,7 +183,7 @@ export default function VendorRisk() {
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-muted)' }}>
                     <span>{t.date}</span>
-                    {r && r.score > 0 && <ScoreBar score={r.score} tier={r.tier} compact />}
+                    {r && r.compositeScore > 0 && <ScoreBar score={r.compositeScore} tier={r.tier} compact />}
                   </div>
                 </div>
               )

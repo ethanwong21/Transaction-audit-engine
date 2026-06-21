@@ -52,14 +52,16 @@ export default function Dashboard() {
   const stats = useMemo(() => {
     const flagged = Object.values(analysisResults).filter(r => r.tier !== 'Clean')
     const critical = flagged.filter(r => r.tier === 'Critical').length
-    const scores = Object.values(analysisResults).map(r => r.score)
+    const scores = Object.values(analysisResults).map(r => r.compositeScore)
     const avgScore = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0
 
     const atRisk = transactions
       .filter(t => analysisResults[t.txn_id]?.tier === 'Critical' || analysisResults[t.txn_id]?.tier === 'High')
       .reduce((sum, t) => sum + t.amount, 0)
 
-    return { total: transactions.length, flagged: flagged.length, critical, avgScore, atRisk }
+    const mlOnly = Object.values(analysisResults).filter(r => r.mlIsAnomaly && r.ruleScore < 25).length
+
+    return { total: transactions.length, flagged: flagged.length, critical, avgScore, atRisk, mlOnly }
   }, [transactions, analysisResults])
 
   const deptChartData = useMemo(() => {
@@ -92,7 +94,7 @@ export default function Dashboard() {
       if (!r || r.tier === 'Clean') continue
       if (!vm[t.vendor]) vm[t.vendor] = { vendor: t.vendor, count: 0, score: 0, amount: 0 }
       vm[t.vendor].count++
-      vm[t.vendor].score = Math.max(vm[t.vendor].score, r.score)
+      vm[t.vendor].score = Math.max(vm[t.vendor].score, r.compositeScore)
       vm[t.vendor].amount += t.amount
     }
     return Object.values(vm).sort((a, b) => b.score - a.score).slice(0, 5)
@@ -136,6 +138,7 @@ export default function Dashboard() {
         <StatCard label="CRITICAL" value={stats.critical} accent="var(--critical)" />
         <StatCard label="$ AT RISK" value={`$${(stats.atRisk / 1000).toFixed(0)}K`} accent="var(--critical)" sub="Critical + High tier" />
         <StatCard label="AVG RISK SCORE" value={stats.avgScore} sub="out of 100" />
+        <StatCard label="ML-FLAGGED (RULES MISSED)" value={stats.mlOnly} accent="#a78bfa" sub="ML only · ruleScore < 25" />
       </div>
 
       {aiNotice && (
